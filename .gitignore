@@ -1,0 +1,12 @@
+# Local kernel source worktree, created by cloning the pinned commit.
+/source/
+
+# Out-of-tree build output and logs.
+/build/
+
+# Never commit generated kernel binaries.
+*.bzImage
+bzImage
+vmlinux
+*.o
+*.ko

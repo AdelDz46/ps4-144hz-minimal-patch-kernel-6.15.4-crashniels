@@ -1,0 +1,119 @@
+name: build-144hz-minimal
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  SRC_COMMIT: 22a65a956e3421b55ad3451f58c053c6467f729f
+  PATCH_SHA256: 8d3410bf868c8bcc29a0aafa130eb8c848bc621173639e82d2687e5c66f3f464
+  CONFIG_SHA256: be4668eb3059eac23a86569cd6fbbf467da54ef9a6cf9c60f19677f0f63b31c0
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify repository inputs
+        run: |
+          set -euo pipefail
+          echo "${PATCH_SHA256}  0001-ps4-144hz-minimal.patch" | sha256sum -c -
+          echo "${CONFIG_SHA256}  config.base" | sha256sum -c -
+          (cd firmware && sha256sum -c SHA256SUMS)
+          test "$(find firmware -type f -name '*.bin' | wc -l)" -eq 10
+
+      - name: Install build dependencies (LLVM 19)
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            bc bison flex libelf-dev libssl-dev zstd xz-utils wget ca-certificates
+          wget -q https://apt.llvm.org/llvm.sh
+          chmod +x llvm.sh
+          sudo ./llvm.sh 19
+          clang-19 --version
+          ld.lld-19 --version
+
+      - name: Fetch pinned kernel source
+        run: |
+          set -euo pipefail
+          git init linux
+          git -C linux remote add origin https://github.com/crashniels/linux
+          git -C linux fetch --depth 1 origin "${SRC_COMMIT}"
+          git -C linux checkout --detach FETCH_HEAD
+          test "$(git -C linux rev-parse HEAD)" = "${SRC_COMMIT}"
+
+      - name: Apply minimal patch
+        run: |
+          set -euo pipefail
+          git -C linux apply --check ../0001-ps4-144hz-minimal.patch
+          git -C linux apply ../0001-ps4-144hz-minimal.patch
+          git -C linux diff --check
+          git -C linux diff --stat
+          echo "APPLIED_PATCH_SHA256=${PATCH_SHA256}" > build-meta.env
+          echo "PATCHED_FILE_SHA256=$(sha256sum linux/drivers/gpu/drm/amd/amdgpu/ps4_bridge.c | cut -d' ' -f1)" >> build-meta.env
+
+      - name: Configure candidate
+        run: |
+          set -euo pipefail
+          mkdir -p build
+          cp config.base build/.config
+          sed -i 's|^CONFIG_LOCALVERSION=.*|CONFIG_LOCALVERSION="-ps4-144hz-minimal-6154-crashniels"|' build/.config
+          sed -i "s|^CONFIG_EXTRA_FIRMWARE_DIR=.*|CONFIG_EXTRA_FIRMWARE_DIR=\"$PWD/firmware\"|" build/.config
+          make -C linux O="$PWD/build" ARCH=x86_64 LLVM=-19 LLVM_IAS=1 olddefconfig
+          grep -E '^CONFIG_LOCALVERSION=|^CONFIG_EXTRA_FIRMWARE_DIR=|^CONFIG_EXTRA_FIRMWARE=' build/.config
+          sha256sum build/.config
+
+      - name: Build bzImage
+        run: |
+          set -euo pipefail
+          set -o pipefail
+          make -C linux O="$PWD/build" ARCH=x86_64 LLVM=-19 LLVM_IAS=1 \
+               -j"$(nproc)" bzImage 2>&1 | tee build.log
+
+      - name: Write manifest
+        if: always()
+        run: |
+          set -u
+          {
+            echo "project: PS4 144Hz Minimal Patch kernel 6.15.4 Crashniels"
+            echo "run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+            echo "date_utc: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo "source_remote: https://github.com/crashniels/linux"
+            echo "source_branch: ps4-linux-6.15.y"
+            echo "source_commit: ${SRC_COMMIT}"
+            echo "patch: 0001-ps4-144hz-minimal.patch sha256=${PATCH_SHA256}"
+            echo "config_base_sha256: ${CONFIG_SHA256}"
+            echo "config_resolved_sha256: $(sha256sum build/.config 2>/dev/null | cut -d' ' -f1)"
+            echo "kernelrelease: $(make -s -C linux O="$PWD/build" ARCH=x86_64 LLVM=-19 kernelrelease 2>/dev/null)"
+            echo "clang: $(clang-19 --version | head -1)"
+            echo "firmware_sha256sums:"
+            sed 's/^/  /' firmware/SHA256SUMS
+            if [ -f build/arch/x86/boot/bzImage ]; then
+              echo "bzImage_size: $(stat -c %s build/arch/x86/boot/bzImage)"
+              echo "bzImage_sha256: $(sha256sum build/arch/x86/boot/bzImage | cut -d' ' -f1)"
+              file build/arch/x86/boot/bzImage
+            else
+              echo "bzImage: NOT PRODUCED"
+            fi
+          } > MANIFEST.txt
+          cat MANIFEST.txt
+
+      - name: Upload build artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ps4-144hz-minimal-${{ github.run_id }}
+          if-no-files-found: warn
+          path: |
+            build.log
+            MANIFEST.txt
+            build-meta.env
+            build/.config
+            build/System.map
+            build/vmlinux
+            build/arch/x86/boot/bzImage

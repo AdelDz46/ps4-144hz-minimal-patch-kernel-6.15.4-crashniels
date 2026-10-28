@@ -1,0 +1,46 @@
+project: PS4 144Hz Minimal Patch kernel 6.15.4 Crashniels
+result: SUCCESS
+date_utc: 2026-10-28T16:26:10Z
+host: qba@cachyos-ps4
+
+source_remote: https://github.com/crashniels/linux
+source_branch: ps4-linux-6.15.y
+source_commit: 22a65a956e3421b55ad3451f58c053c6467f729f
+
+patch: 0001-ps4-144hz-minimal.patch
+patch_sha256: 8d3410bf868c8bcc29a0aafa130eb8c848bc621173639e82d2687e5c66f3f464
+patched_file: drivers/gpu/drm/amd/amdgpu/ps4_bridge.c
+patched_file_sha256: cef57a87deac09624ff3198589f3f8ab69ad50416a54e251d4ae5b56a6951574
+patch_apply_check_on_pristine: PASS
+git_diff_check: PASS
+
+config_base_sha256: be4668eb3059eac23a86569cd6fbbf467da54ef9a6cf9c60f19677f0f63b31c0
+config_resolved_sha256: 2683c18d830f23a60b1050b210ab9e91dfdb457af663f9ec804b04df0d8e8791
+config_localversion: -ps4-144hz-minimal-6154-crashniels
+config_extra_firmware_dir: <project>/firmware (rerouted from builder-local /home/saya/... path)
+
+kernelrelease: 6.15.4-ps4-144hz-minimal-6154-crashniels+
+build_string: 6.15.4-ps4-144hz-minimal-6154-crashniels+ (qba@cachyos-ps4) #1 SMP PREEMPT_DYNAMIC Wed Oct 28 17:24:36 CET 2026
+
+toolchain: ClangBuiltLinux clang version 19.1.7 (cd708029e0b2869e80abe31ddb175f7c35361f90)
+toolchain_archive_sha256: c9f2cd6997bc17fdd241a3594d77ba22d9f4921ef69ac1e14ad86fd6522f18bb
+toolchain_gpg: BAD signature (checksum-only trust)
+
+build_command: make -C source O=<project>/build ARCH=x86_64 LLVM=1 LLVM_IAS=1 -j1 bzImage
+build_log: build/build.log
+build_log_success_marker: "Kernel: arch/x86/boot/bzImage is ready  (#1)"
+build_errors: 0
+build_warnings: 42 (all pre-existing code categories; none from added code)
+
+bzImage_path: /home/qba/ps4-144hz-minimal-patch-kernel-6.15.4-crashniels/build/arch/x86/boot/bzImage
+bzImage_size: 16729088
+bzImage_sha256: c5845a3e668e3d364ca51781ea1eda86802c743265b266cb2656fb12845c6c80
+bzImage_type: Linux kernel x86 boot executable, bzImage
+
+vmlinux_size: 63135224
+vmlinux_sha256: 6579452211e6f7a23028cf4df89a59edc016ba2067571ee22a33d8dc36eb0e74
+system_map_size: 4868033
+system_map_sha256: 5a4fd1f2fe846abada0ec79bb433ef6f47c3276c05bbf6cd333a153b9e79c334
+
+modules: CONFIG_MODULES=y, zero =m symbols; bzImage self-contained
+hardware_verified: NO

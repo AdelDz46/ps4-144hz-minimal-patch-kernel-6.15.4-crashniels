@@ -1,0 +1,111 @@
+diff --git a/drivers/gpu/drm/amd/amdgpu/ps4_bridge.c b/drivers/gpu/drm/amd/amdgpu/ps4_bridge.c
+index d9d802e16..fa6183d30 100644
+--- a/drivers/gpu/drm/amd/amdgpu/ps4_bridge.c
++++ b/drivers/gpu/drm/amd/amdgpu/ps4_bridge.c
+@@ -162,6 +162,7 @@ struct ps4_bridge {
+ 	struct mutex mutex;
+ 
+ 	int mode;
++	bool custom_mode_valid;
+ };
+ 
+ /* this should really be taken care of by the connector, but that is currently
+@@ -296,6 +297,18 @@ static inline struct ps4_bridge *
+ 	return container_of(bridge, struct ps4_bridge, bridge);
+ }
+ 
++static bool ps4_bridge_is_1080p144(const struct drm_display_mode *mode)
++{
++	if (mode->hdisplay == 1920 && mode->vdisplay == 1080 &&
++	    mode->clock == 333210 &&
++	    mode->hsync_start == 1928 && mode->hsync_end == 1960 && mode->htotal == 2000 &&
++	    mode->vsync_start == 1095 && mode->vsync_end == 1103 && mode->vtotal == 1157 &&
++	    (mode->flags & DRM_MODE_FLAG_PHSYNC) &&
++	    (mode->flags & DRM_MODE_FLAG_NVSYNC))
++		return true;
++	return false;
++}
++
+ void ps4_bridge_mode_set(struct drm_bridge *bridge,
+ 			 const struct drm_display_mode *mode,
+ 			 const struct drm_display_mode *adjusted_mode)
+@@ -305,10 +318,14 @@ void ps4_bridge_mode_set(struct drm_bridge *bridge,
+ 	/* This gets called before pre_enable/enable, so we just stash
+ 	 * the vic ID for later */
+ 	mn_bridge->mode = drm_match_cea_mode(adjusted_mode);
+-	DRM_DEBUG_KMS("vic mode: %d\n", mn_bridge->mode);
+-	if (!mn_bridge->mode) {
++	mn_bridge->custom_mode_valid = false;
++	if (!mn_bridge->mode && ps4_bridge_is_1080p144(adjusted_mode)) {
++		mn_bridge->custom_mode_valid = true;
++		mn_bridge->mode = 63;
++	} else if (!mn_bridge->mode) {
+ 		DRM_ERROR("attempted to set non-CEA mode\n");
+ 	}
++	DRM_DEBUG_KMS("vic mode: %d\n", mn_bridge->mode);
+ }
+ 
+ static void ps4_bridge_pre_enable(struct drm_bridge *bridge)
+@@ -436,7 +453,10 @@ static void ps4_bridge_enable(struct drm_bridge *bridge)
+ 		cq_writereg(&mn_bridge->cq, 0x765a, 0);
+ 		cq_writereg(&mn_bridge->cq, 0x7062, mn_bridge->mode | 0x80);
+ 		cq_writereg(&mn_bridge->cq, 0x7215, 0x28); /* aspect */
+-		cq_writereg(&mn_bridge->cq, 0x7217, mn_bridge->mode);
++		if (mn_bridge->custom_mode_valid)
++			cq_writereg(&mn_bridge->cq, 0x7217, 63);
++		else
++			cq_writereg(&mn_bridge->cq, 0x7217, mn_bridge->mode);
+ 		cq_writereg(&mn_bridge->cq, 0x7218, 0);
+ 		cq_writereg(&mn_bridge->cq, CSCMOD, 0xdc);
+ 		cq_writereg(&mn_bridge->cq, C420SET, 0xaa);
+@@ -556,8 +576,13 @@ static void ps4_bridge_enable(struct drm_bridge *bridge)
+ 		cq_writereg(&mn_bridge->cq, 0x7009, 0x00);
+ 		cq_writereg(&mn_bridge->cq, 0x7040, 0x42);
+ 		cq_writereg(&mn_bridge->cq, 0x7225, 0x28);
+-		cq_writereg(&mn_bridge->cq, 0x7227, mn_bridge->mode);
+-		cq_writereg(&mn_bridge->cq, 0x7228, 0x00);
++		if (mn_bridge->custom_mode_valid) {
++			cq_writereg(&mn_bridge->cq, 0x7227, 63);
++			cq_writereg(&mn_bridge->cq, 0x7228, 0x00);
++		} else {
++			cq_writereg(&mn_bridge->cq, 0x7227, mn_bridge->mode);
++			cq_writereg(&mn_bridge->cq, 0x7228, 0x00);
++		}
+ 		cq_writereg(&mn_bridge->cq, 0x7070, mn_bridge->mode);
+ 		cq_writereg(&mn_bridge->cq, 0x7071, mn_bridge->mode | 0x80);
+ 		cq_writereg(&mn_bridge->cq, 0x7072, 0x00);
+@@ -708,6 +733,14 @@ static const struct drm_display_mode mode_1080p120 = {
+ 	  .picture_aspect_ratio = HDMI_PICTURE_ASPECT_16_9
+ };
+ 
++/* 1920x1080@144Hz - custom detailed timing (non-CEA) */
++static const struct drm_display_mode mode_1080p144 = {
++	DRM_MODE("1920x1080", DRM_MODE_TYPE_DRIVER, 333210, 1920, 1928,
++			1960, 2000, 0, 1080, 1095, 1103, 1157, 0,
++		   DRM_MODE_FLAG_PHSYNC | DRM_MODE_FLAG_NVSYNC),
++	  .picture_aspect_ratio = HDMI_PICTURE_ASPECT_16_9
++};
++
+ int ps4_bridge_get_modes(struct drm_connector *connector)
+ {
+ 	struct drm_device *dev = connector->dev;
+@@ -720,6 +753,9 @@ int ps4_bridge_get_modes(struct drm_connector *connector)
+ 	newmode = drm_mode_duplicate(dev, &mode_1080p120);
+ 	drm_mode_probed_add(connector, newmode);
+ 
++	newmode = drm_mode_duplicate(dev, &mode_1080p144);
++	drm_mode_probed_add(connector, newmode);
++
+ 	//newmode = drm_mode_duplicate(dev, &mode_720p);
+ 	//drm_mode_probed_add(connector, newmode);
+ 	//newmode = drm_mode_duplicate(dev, &mode_480p);
+@@ -765,6 +801,9 @@ enum drm_mode_status ps4_bridge_mode_valid(struct drm_connector *connector,
+ 				  const struct drm_display_mode *mode)
+ {
+ 	int vic = drm_match_cea_mode(mode);
++	/* Allow exact validated 1080p144 custom timing */
++	if (ps4_bridge_is_1080p144(mode))
++		return MODE_OK;
+ 
+ 	/* Allow anything that we can match up to a VIC (CEA modes) */
+ 	if (!vic || (vic != 16 && vic != 4 && vic != 63)) {
