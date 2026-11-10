@@ -10,7 +10,7 @@ tree used by the known-working 1080p120 KHEOPS kernel.
 - Source: `crashniels/linux`, branch `ps4-linux-6.15.y`,
   commit `22a65a956e3421b55ad3451f58c053c6467f729f`.
 - Config: the `.config` shipped with the known-working
-  `6.15.4.src-crashniels_KHEOPS_FullLTO-v2.1_ntsync_1080p120Hz_belize` release.
+  `6.15.4.src-crashniels_1080p120Hz_belize` release.
 - Patch: `0001-ps4-144hz-minimal.patch`,
   SHA-256 `8d3410bf868c8bcc29a0aafa130eb8c848bc621173639e82d2687e5c66f3f464`.
 - Build: one out-of-tree `bzImage` build, recorded in `BUILD.md`.
